@@ -1,8 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
-import { JWTService } from '@/services/JWTService';
-import { UserService } from '@/services/UserService';
-import { AppDataSource } from '@/config/database';
-import { OAuthAccessToken } from '@/entities/OAuthAccessToken';
+import { JWTService } from '../services/JWTService';
+import { UserService } from '../services/UserService';
+import { AppDataSource } from '../config/database';
+import { OAuthAccessToken } from '../entities/OAuthAccessToken';
 
 interface AuthenticatedRequest extends Request {
   user?: any;

@@ -1,6 +1,8 @@
 import { Router } from 'express';
-import authRoutes from '@routes/authRoutes';
-import userRoutes from '@routes/userRoutes';
+import authRoutes from './AuthRoutes';
+import userRoutes from './UserRoutes';
+
+
 
 /**
  * @swagger

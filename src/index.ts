@@ -9,11 +9,11 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
-import { initializeDatabase } from '@/config/database';
-import { Logger } from '@/utils/Logger';
-import { setupSwagger } from '@/config/swagger'; // ✅ AGREGAR ESTA LÍNEA
-import { apiRateLimit } from '@/middlewares/RateLimitMiddleware';
-import routes from '@/routes';
+import { initializeDatabase } from './config/database';
+import { Logger } from './utils/Logger';
+import { setupSwagger } from './config/swagger'; // ✅ AGREGAR ESTA LÍNEA
+import { apiRateLimit } from './middlewares/RateLimitMiddleware';
+import routes from './routes';
 
 // Cargar variables de entorno
 

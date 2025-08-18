@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import { validate } from 'class-validator';
 import { AuthService, LoginCredentials, RegisterData } from '@/services/AuthService';
-import { JWTService } from '@/services/JWTService';
-import { UserService } from '@/services/UserService';
-import { EmailService } from '@/services/EmailService';
+import { JWTService } from '../services/JWTService';
+import { UserService } from '../services/UserService';
+import { EmailService } from '../services/EmailService';
 
 interface AuthenticatedRequest extends Request {
   user?: any;

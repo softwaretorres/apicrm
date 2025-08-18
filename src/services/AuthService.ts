@@ -1,8 +1,8 @@
 import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
-import { AppDataSource } from '@/config/database';
-import { User } from '@/entities/User';
-import { OAuthAccessToken } from '@/entities/OAuthAccessToken';
+import { AppDataSource } from '../config/database';
+import { User } from '../entities/User';
+import { OAuthAccessToken } from '../entities/OAuthAccessToken';
 import { JWTService } from './JWTService';
 import { EmailService } from './EmailService';
 

@@ -1,7 +1,7 @@
 import { DataSource } from 'typeorm';
 import { User } from '@/entities/User';
-import { OAuthAccessToken } from '@/entities/OAuthAccessToken';
-import { OAuthClient } from '@/entities/OAuthClient';
+import { OAuthAccessToken } from '../entities/OAuthAccessToken';
+import { OAuthClient } from '../entities/OAuthClient';
 
 export const AppDataSource = new DataSource({
   type: process.env.DB_TYPE as 'mysql' | 'postgres',

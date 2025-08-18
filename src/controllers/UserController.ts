@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { UserService, UserFilters } from '@/services/UserService';
+import { UserService, UserFilters } from '../services/UserService';
 
 interface AuthenticatedRequest extends Request {
   user?: any;

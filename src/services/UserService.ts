@@ -1,5 +1,5 @@
-import { AppDataSource } from '@/config/database';
-import { User } from '@/entities/User';
+import { AppDataSource } from '../config/database';
+import { User } from '../entities/User';
 import { FindManyOptions, Like } from 'typeorm';
 
 export interface UserFilters {

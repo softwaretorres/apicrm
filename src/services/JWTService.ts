@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import fs from 'fs';
 import path from 'path';
-import { User } from '@/entities/User';
+import { User } from '../entities/User';
 
 interface JWTPayload {
   jti: string;
