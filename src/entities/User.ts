@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
 import { IsEmail, IsString, MinLength } from 'class-validator';
-import { OAuthAccessToken } from '../entities/OAuthAccessToken';
+import { OAuthAccessToken } from './OAuthAccessToken';
 
 @Entity('users') // Laravel usa 'users' por defecto
 export class User {
