@@ -1,5 +1,5 @@
 import { DataSource } from 'typeorm';
-import { User } from '@/entities/User';
+import { User } from '../entities/User';
 import { OAuthAccessToken } from '../entities/OAuthAccessToken';
 //iMPORTAR CLIENT
 import { OAuthClient } from '../entities/OAuthClient';
