@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import authRoutes from './AuthRoutes';
 import userRoutes from './UserRoutes';
+import catalogRoutes from './CatalogRoutes';
+import propertyRoutes from './PropertyRoutes';
 
 
 
@@ -76,6 +78,8 @@ const router = Router();
 
 // Rutas de autenticación
 router.use('/auth', authRoutes);
+router.use('/catalogs', catalogRoutes);
+router.use('/properties', propertyRoutes);
 
 // Rutas de usuarios
 router.use('/users', userRoutes);

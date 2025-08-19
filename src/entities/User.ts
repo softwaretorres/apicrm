@@ -7,7 +7,7 @@ export class User {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column({ unique: true })
+  @Column({ unique: false })
   @IsString()
   name!: string;
 
@@ -54,6 +54,7 @@ export class User {
   // Relación con tokens OAuth
   @OneToMany(() => OAuthAccessToken, token => token.user)
   accessTokens!: OAuthAccessToken[];
+    properties: any;
 
   // Métodos auxiliares
   public getFullName(): string {

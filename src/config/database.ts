@@ -3,6 +3,16 @@ import { User } from '../entities/User';
 import { OAuthAccessToken } from '../entities/OAuthAccessToken';
 //iMPORTAR CLIENT
 import { OAuthClient } from '../entities/OAuthClient';
+import { PropertyType } from '../entities/PropertyType';
+import { PropertyStatus } from '../entities/PropertyStatus';
+import { TransactionType } from '../entities/TransactionType';
+import { PropertyCondition } from '../entities/PropertyCondition';
+import { PropertyFeature } from '../entities/PropertyFeature';
+import { PropertyFeatureValue } from '../entities/PropertyFeatureValue';
+import { PropertyImage } from '../entities/PropertyImage';
+import { Property } from '../entities/Property';
+import dotenv from 'dotenv';
+dotenv.config();
 
 export const AppDataSource = new DataSource({
   type: process.env.DB_TYPE as 'mysql' | 'postgres',
@@ -13,7 +23,12 @@ export const AppDataSource = new DataSource({
   database: process.env.DB_DATABASE || 'laravel_db',
   synchronize: process.env.DB_SYNCHRONIZE === 'true',
   logging: process.env.DB_LOGGING === 'true',
-  entities: [User, OAuthAccessToken, OAuthClient],
+  entities: [
+    User, OAuthAccessToken, OAuthClient,
+    PropertyType, PropertyStatus, TransactionType, PropertyCondition,
+    PropertyFeature, PropertyFeatureValue, PropertyImage, Property
+
+  ],
   migrations: ['src/migrations/**/*.ts'],
   subscribers: ['src/subscribers/**/*.ts'],
   extra: {
