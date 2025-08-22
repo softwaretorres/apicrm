@@ -1,19 +1,25 @@
+// src/services/UserService.ts
+
+import { Repository } from 'typeorm';
 import { AppDataSource } from '../config/database';
 import { User } from '../entities/User';
-import { FindManyOptions, Like } from 'typeorm';
+import { Organization } from '../entities/Organization';
+import { CreateUserDTO, UpdateUserDTO, UserStats } from '../types';
 
+// Agregar esta interfaz al inicio del archivo
 export interface UserFilters {
   search?: string;
   active?: boolean;
   verified?: boolean;
   page?: number;
   limit?: number;
-  sortBy?: 'id' | 'name' | 'email' | 'createdAt' | 'lastLoginAt';
+  sortBy?: keyof User;
   sortOrder?: 'ASC' | 'DESC';
+  organizationId?: number;
 }
 
-export interface PaginatedUsers {
-  data: Partial<User>[];
+export interface PaginatedResult<T> {
+  data: T[];
   total: number;
   page: number;
   limit: number;
@@ -21,30 +27,16 @@ export interface PaginatedUsers {
 }
 
 export class UserService {
-  private userRepository = AppDataSource.getRepository(User);
+  private userRepository: Repository<User>;
+  private organizationRepository: Repository<Organization>;
 
-  /**
-   * Buscar usuario por ID
-   */
-  public async findById(id: number): Promise<User | null> {
-    return await this.userRepository.findOne({
-      where: { id }
-    });
+  constructor() {
+    this.userRepository = AppDataSource.getRepository(User);
+    this.organizationRepository = AppDataSource.getRepository(Organization);
   }
 
-  /**
-   * Buscar usuario por email
-   */
-  public async findByEmail(email: string): Promise<User | null> {
-    return await this.userRepository.findOne({
-      where: { email: email.toLowerCase() }
-    });
-  }
-
-  /**
-   * Obtener lista de usuarios con filtros y paginación
-   */
-  public async getUsers(filters: UserFilters = {}): Promise<PaginatedUsers> {
+  // Método getUsers que falta
+  async getUsers(filters: UserFilters): Promise<PaginatedResult<User>> {
     const {
       search,
       active,
@@ -52,15 +44,19 @@ export class UserService {
       page = 1,
       limit = 10,
       sortBy = 'id',
-      sortOrder = 'DESC'
+      sortOrder = 'DESC',
+      organizationId
     } = filters;
 
-    const queryBuilder = this.userRepository.createQueryBuilder('user');
+    const queryBuilder = this.userRepository.createQueryBuilder('user')
+      .leftJoinAndSelect('user.userRoles', 'userRoles')
+      .leftJoinAndSelect('userRoles.role', 'role')
+      .leftJoinAndSelect('user.organization', 'organization');
 
-    // Filtros
+    // Aplicar filtros
     if (search) {
       queryBuilder.andWhere(
-        '(user.name LIKE :search OR user.email LIKE :search OR user.firstName LIKE :search OR user.lastName LIKE :search)',
+        '(user.name ILIKE :search OR user.email ILIKE :search OR user.firstName ILIKE :search OR user.lastName ILIKE :search)',
         { search: `%${search}%` }
       );
     }
@@ -70,183 +66,307 @@ export class UserService {
     }
 
     if (verified !== undefined) {
-      if (verified) {
-        queryBuilder.andWhere('user.emailVerifiedAt IS NOT NULL');
-      } else {
-        queryBuilder.andWhere('user.emailVerifiedAt IS NULL');
-      }
+      queryBuilder.andWhere(
+        verified ? 'user.emailVerifiedAt IS NOT NULL' : 'user.emailVerifiedAt IS NULL'
+      );
     }
 
-    // Ordenamiento
-    queryBuilder.orderBy(`user.${sortBy}`, sortOrder);
+    if (organizationId) {
+      queryBuilder.andWhere('user.organizationId = :organizationId', { organizationId });
+    }
 
     // Paginación
-    const offset = (page - 1) * limit;
-    queryBuilder.skip(offset).take(limit);
+    const skip = (page - 1) * limit;
+    queryBuilder
+      .orderBy(`user.${sortBy}`, sortOrder)
+      .skip(skip)
+      .take(limit);
 
-    // Ejecutar consulta
-    const [users, total] = await queryBuilder.getManyAndCount();
+    const [data, total] = await queryBuilder.getManyAndCount();
+    const totalPages = Math.ceil(total / limit);
 
     return {
-      data: users.map(user => user.toJSON()),
+      data,
       total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit)
+      totalPages
     };
   }
 
-  /**
-   * Crear nuevo usuario
-   */
-  public async createUser(userData: Partial<User>): Promise<User> {
+  async findById(id: number): Promise<User | null> {
+    return this.userRepository.findOne({
+      where: { id },
+      relations: [
+        'userRoles', 
+        'userRoles.role', 
+        'userRoles.role.rolePermissions', 
+        'userRoles.role.rolePermissions.permission',
+        'organization'
+      ]
+    });
+  }
+
+  async findByEmail(email: string): Promise<User | null> {
+    return this.userRepository.findOne({
+      where: { email },
+      relations: [
+        'userRoles', 
+        'userRoles.role', 
+        'userRoles.role.rolePermissions', 
+        'userRoles.role.rolePermissions.permission',
+        'organization'
+      ]
+    });
+  }
+
+  async createUser(userData: CreateUserDTO): Promise<User> {
+    // Verificar que el email no exista
+    const existingUser = await this.findByEmail(userData.email);
+    if (existingUser) {
+      throw new Error('User with this email already exists');
+    }
+
+    // Si se especifica organización, verificar que exista
+    if (userData.organizationId) {
+      const organization = await this.organizationRepository.findOne({
+        where: { id: userData.organizationId }
+      });
+      
+      if (!organization) {
+        throw new Error('Organization not found');
+      }
+
+      if (!organization.canAddMoreUsers()) {
+        throw new Error('Organization has reached maximum user limit');
+      }
+    }
+
+    // Crear usuario
     const user = this.userRepository.create({
       ...userData,
-      email: userData.email?.toLowerCase(),
-      active: userData.active ?? true
+      active: true,
+      emailVerifiedAt: new Date()
     });
 
-    return await this.userRepository.save(user);
+    const savedUser = await this.userRepository.save(user);
+
+    // Actualizar contador de usuarios en la organización
+    if (userData.organizationId) {
+      await this.organizationRepository.increment(
+        { id: userData.organizationId },
+        'usersCount',
+        1
+      );
+    }
+
+    return this.findById(savedUser.id) as Promise<User>;
   }
 
-  /**
-   * Actualizar usuario
-   */
-  public async updateUser(id: number, updateData: Partial<User>): Promise<User | null> {
-    await this.userRepository.update(id, {
-      ...updateData,
-      email: updateData.email?.toLowerCase()
-    });
-
-    return await this.findById(id);
-  }
-
-  /**
-   * Eliminar usuario (soft delete - desactivar)
-   */
-  public async deleteUser(id: number): Promise<boolean> {
-    const result = await this.userRepository.update(id, { active: false });
-    return result.affected ? result.affected > 0 : false;
-  }
-
-  /**
-   * Eliminar usuario permanentemente
-   */
-  public async permanentlyDeleteUser(id: number): Promise<boolean> {
-    const result = await this.userRepository.delete(id);
-    return result.affected ? result.affected > 0 : false;
-  }
-
-  /**
-   * Activar/Desactivar usuario
-   */
-  public async toggleUserStatus(id: number): Promise<User | null> {
+  async updateUser(id: number, userData: UpdateUserDTO): Promise<User> {
     const user = await this.findById(id);
-    if (!user) return null;
+    if (!user) {
+      throw new Error('User not found');
+    }
 
-    user.active = !user.active;
-    return await this.userRepository.save(user);
+    await this.userRepository.update(id, userData);
+    return this.findById(id) as Promise<User>;
   }
 
-  /**
-   * Obtener estadísticas de usuarios
-   */
-  public async getUserStats(): Promise<{
-    total: number;
-    active: number;
-    inactive: number;
-    verified: number;
-    unverified: number;
-    recentlyRegistered: number;
-  }> {
-    const total = await this.userRepository.count();
-    const active = await this.userRepository.count({ where: { active: true } });
-    const inactive = total - active;
-    
-    const verified = await this.userRepository
-      .createQueryBuilder('user')
-      .where('user.emailVerifiedAt IS NOT NULL')
-      .getCount();
-    
-    const unverified = total - verified;
+  // Corregir el método deleteUser para retornar boolean
+  async deleteUser(id: number): Promise<boolean> {
+    const user = await this.findById(id);
+    if (!user) {
+      return false;
+    }
 
-    // Usuarios registrados en los últimos 30 días
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    const recentlyRegistered = await this.userRepository
-      .createQueryBuilder('user')
-      .where('user.createdAt >= :thirtyDaysAgo', { thirtyDaysAgo })
-      .getCount();
+    // Soft delete - solo desactivar
+    await this.userRepository.update(id, { active: false });
 
-    return {
-      total,
-      active,
-      inactive,
-      verified,
-      unverified,
-      recentlyRegistered
-    };
+    // Actualizar contador de usuarios en la organización
+    if (user.organizationId) {
+      await this.organizationRepository.decrement(
+        { id: user.organizationId },
+        'usersCount',
+        1
+      );
+    }
+
+    return true;
   }
 
-  /**
-   * Buscar usuarios por criterios múltiples
-   */
-  public async searchUsers(criteria: {
+  // Agregar método toggleUserStatus
+  async toggleUserStatus(id: number): Promise<User | null> {
+    const user = await this.findById(id);
+    if (!user) {
+      return null;
+    }
+
+    const newStatus = !user.active;
+    await this.userRepository.update(id, { active: newStatus });
+
+    // Actualizar contador de usuarios en la organización
+    if (user.organizationId) {
+      if (newStatus) {
+        await this.organizationRepository.increment(
+          { id: user.organizationId },
+          'usersCount',
+          1
+        );
+      } else {
+        await this.organizationRepository.decrement(
+          { id: user.organizationId },
+          'usersCount',
+          1
+        );
+      }
+    }
+
+    return this.findById(id);
+  }
+
+  async getUsersByOrganization(organizationId: number): Promise<User[]> {
+    return this.userRepository.find({
+      where: { organizationId, active: true },
+      relations: ['userRoles', 'userRoles.role'],
+      order: { createdAt: 'DESC' }
+    });
+  }
+
+  // Corregir método searchUsers para aceptar objeto criteria
+  async searchUsers(criteria: {
     name?: string;
     email?: string;
     phone?: string;
     active?: boolean;
+    organizationId?: number;
   }): Promise<User[]> {
-    const queryBuilder = this.userRepository.createQueryBuilder('user');
+    const queryBuilder = this.userRepository.createQueryBuilder('user')
+      .leftJoinAndSelect('user.userRoles', 'userRoles')
+      .leftJoinAndSelect('userRoles.role', 'role');
+
+    let hasConditions = false;
 
     if (criteria.name) {
-      queryBuilder.andWhere('user.name LIKE :name', { name: `%${criteria.name}%` });
+      queryBuilder.andWhere('user.name ILIKE :name', { name: `%${criteria.name}%` });
+      hasConditions = true;
     }
 
     if (criteria.email) {
-      queryBuilder.andWhere('user.email LIKE :email', { email: `%${criteria.email}%` });
+      queryBuilder.andWhere('user.email ILIKE :email', { email: `%${criteria.email}%` });
+      hasConditions = true;
     }
 
     if (criteria.phone) {
-      queryBuilder.andWhere('user.phone LIKE :phone', { phone: `%${criteria.phone}%` });
+      queryBuilder.andWhere('user.phone ILIKE :phone', { phone: `%${criteria.phone}%` });
+      hasConditions = true;
     }
 
     if (criteria.active !== undefined) {
       queryBuilder.andWhere('user.active = :active', { active: criteria.active });
+      hasConditions = true;
     }
 
-    return await queryBuilder.getMany();
-  }
-
-  /**
-   * Verificar si un email está disponible
-   */
-  public async isEmailAvailable(email: string, excludeUserId?: number): Promise<boolean> {
-    const queryBuilder = this.userRepository
-      .createQueryBuilder('user')
-      .where('user.email = :email', { email: email.toLowerCase() });
-
-    if (excludeUserId) {
-      queryBuilder.andWhere('user.id != :excludeUserId', { excludeUserId });
+    if (criteria.organizationId) {
+      queryBuilder.andWhere('user.organizationId = :organizationId', { organizationId: criteria.organizationId });
+      hasConditions = true;
     }
 
-    const existingUser = await queryBuilder.getOne();
-    return !existingUser;
+    if (!hasConditions) {
+      queryBuilder.where('1=1'); // Condición dummy para evitar errores
+    }
+
+    return queryBuilder
+      .orderBy('user.name', 'ASC')
+      .limit(50)
+      .getMany();
   }
 
-  /**
-   * Obtener usuarios activos recientemente
-   */
-  public async getRecentlyActiveUsers(days: number = 7): Promise<User[]> {
+  // Agregar método getRecentlyActiveUsers
+  async getRecentlyActiveUsers(days: number): Promise<User[]> {
     const dateThreshold = new Date();
     dateThreshold.setDate(dateThreshold.getDate() - days);
 
-    return await this.userRepository
-      .createQueryBuilder('user')
-      .where('user.lastLoginAt >= :dateThreshold', { dateThreshold })
+    return this.userRepository.find({
+      where: {
+        active: true,
+        lastLoginAt: {
+          gte: dateThreshold
+        } as any
+      },
+      relations: ['userRoles', 'userRoles.role', 'organization'],
+      order: { lastLoginAt: 'DESC' },
+      take: 100
+    });
+  }
+
+  async updateLastLogin(id: number): Promise<void> {
+    await this.userRepository.update(id, {
+      lastLoginAt: new Date()
+    });
+  }
+
+  async verifyPassword(user: User, password: string): Promise<boolean> {
+    // Aquí deberías usar bcrypt para verificar la contraseña
+    // return bcrypt.compare(password, user.password);
+    
+    // Por ahora comparación directa (NO usar en producción)
+    return user.password === password;
+  }
+
+  async changePassword(id: number, newPassword: string): Promise<void> {
+    // Aquí deberías hashear la contraseña con bcrypt
+    // const hashedPassword = await bcrypt.hash(newPassword, 10);
+    
+    await this.userRepository.update(id, {
+      password: newPassword // En producción usar hashedPassword
+    });
+  }
+
+  async acceptInvitation(id: number): Promise<User> {
+    await this.userRepository.update(id, {
+      invitationAcceptedAt: new Date()
+    });
+
+    return this.findById(id) as Promise<User>;
+  }
+
+  async getUserStats(organizationId?: number): Promise<{
+    totalUsers: number;
+    activeUsers: number;
+    inactiveUsers: number;
+    pendingInvitations: number;
+  }> {
+    const queryBuilder = this.userRepository.createQueryBuilder('user');
+
+    if (organizationId) {
+      queryBuilder.where('user.organizationId = :organizationId', { organizationId });
+    }
+
+    const totalUsers = await queryBuilder.getCount();
+    
+    const activeUsers = await queryBuilder
+      .clone()
       .andWhere('user.active = :active', { active: true })
-      .orderBy('user.lastLoginAt', 'DESC')
-      .getMany();
+      .getCount();
+
+    const inactiveUsers = await queryBuilder
+      .clone()
+      .andWhere('user.active = :active', { active: false })
+      .getCount();
+
+    const pendingInvitations = await queryBuilder
+      .clone()
+      .andWhere('user.invitationAcceptedAt IS NULL')
+      .andWhere('user.invitedBy IS NOT NULL')
+      .andWhere('user.active = :active', { active: true })
+      .getCount();
+
+    return {
+      totalUsers,
+      activeUsers,
+      inactiveUsers,
+      pendingInvitations
+    };
   }
 }

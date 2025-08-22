@@ -12,6 +12,11 @@ import { PropertyFeatureValue } from '../entities/PropertyFeatureValue';
 import { PropertyImage } from '../entities/PropertyImage';
 import { Property } from '../entities/Property';
 import dotenv from 'dotenv';
+import { Role } from '../entities/Role';
+import { Organization } from '../entities/Organization';
+import { Permission } from '../entities/Permission';
+import { RolePermission } from '../entities/RolePermission';
+import { UserRole } from '../entities/UserRole';
 dotenv.config();
 
 export const AppDataSource = new DataSource({
@@ -24,7 +29,11 @@ export const AppDataSource = new DataSource({
   synchronize: process.env.DB_SYNCHRONIZE === 'true',
   logging: process.env.DB_LOGGING === 'true',
   entities: [
-    User, OAuthAccessToken, OAuthClient,
+    User, OAuthAccessToken, OAuthClient, Role,
+    UserRole,
+    Permission,
+    RolePermission,
+    Organization,
     PropertyType, PropertyStatus, TransactionType, PropertyCondition,
     PropertyFeature, PropertyFeatureValue, PropertyImage, Property
 
