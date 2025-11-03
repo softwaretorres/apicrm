@@ -1,127 +1,149 @@
+// controllers/AuthController.ts
 import { Request, Response } from 'express';
-import { validate } from 'class-validator';
+import { validationResult } from 'express-validator';
 import { AuthService, LoginCredentials, RegisterData } from '../services/AuthService';
-import { JWTService } from '../services/JWTService';
-import { UserService } from '../services/UserService';
-import { EmailService } from '../services/EmailService';
+import { RoleService } from '../services/RoleService';
+import { AuthenticatedUser } from '../types';
 
 interface AuthenticatedRequest extends Request {
-  user?: any;
+  user?: AuthenticatedUser;
   token?: string;
 }
 
 export class AuthController {
-  private authService = new AuthService();
-  private jwtService = new JWTService();
-  private userService = new UserService();
-  private emailService = new EmailService();
+  private authService: AuthService;
+  private roleService: RoleService;
+
+  constructor() {
+    this.authService = new AuthService();
+    this.roleService = new RoleService();
+  }
+
+  /**
+   * Registro de nuevo usuario
+   */
+  public register = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({
+          success: false,
+          message: 'Validation errors',
+          errors: errors.array()
+        });
+        return;
+      }
+
+      const registerData: RegisterData = {
+        name: req.body.name,
+        email: req.body.email,
+        password: req.body.password,
+        firstName: req.body.firstName,
+        lastName: req.body.lastName,
+        phone: req.body.phone
+      };
+
+      // Registrar usuario usando tu AuthService
+      const authResponse = await this.authService.register(registerData);
+
+      // Asignar rol de usuario por defecto usando tu RoleService
+      const userId = (authResponse.user as any).id;
+      const organizationId = (authResponse.user as any).organizationId;
+      
+      // Buscar el rol 'user' por nombre
+      const userRole = await this.roleService.findByName('admin');
+      console.log(userRole)
+      if (userRole) {
+        await this.roleService.assignRoleToUser({
+          userId: userId,
+          roleId: userRole.id,
+          organizationId: organizationId
+        });
+      }
+
+      // Obtener usuario con roles y permisos usando tu RoleService
+      const userRoles = await this.roleService.getUserRoles(userId, organizationId);
+      const userPermissions = await this.roleService.getUserPermissions(userId, organizationId);
+
+      res.status(201).json({
+        success: true,
+        message: 'User registered successfully',
+        data: {
+          user: {
+            ...authResponse.user,
+            roles: userRoles,
+            permissions: userPermissions
+          },
+          tokens: {
+            accessToken: authResponse.access_token,
+            refreshToken: authResponse.refresh_token,
+            tokenType: authResponse.token_type,
+            expiresIn: authResponse.expires_in
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Registration error:', error);
+      res.status(400).json({
+        success: false,
+        message: 'Registration failed',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  };
 
   /**
    * Login de usuario
    */
   public login = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { email, password } = req.body;
-
-      // Validaciones básicas
-      if (!email || !password) {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
         res.status(400).json({
-          message: 'Email and password are required',
-          errors: {
-            email: !email ? ['Email is required'] : [],
-            password: !password ? ['Password is required'] : []
-          }
+          success: false,
+          message: 'Validation errors',
+          errors: errors.array()
         });
         return;
       }
 
-      const credentials: LoginCredentials = { email, password };
+      const credentials: LoginCredentials = {
+        email: req.body.email,
+        password: req.body.password
+      };
+
+      // Login usando tu AuthService
       const authResponse = await this.authService.login(credentials);
 
-      // Opcional: enviar notificación de login
-      try {
-        await this.emailService.sendLoginNotification(authResponse.user as any, {
-          ip: req.ip || 'unknown',
-          userAgent: req.get('User-Agent') || 'unknown'
-        });
-      } catch (error) {
-        console.error('Failed to send login notification:', error);
-      }
+      // Obtener usuario con roles usando tu RoleService
+      const userId = (authResponse.user as any).id;
+      const organizationId = (authResponse.user as any).organizationId;
+      const userRoles = await this.roleService.getUserRoles(userId, organizationId);
+      const userPermissions = await this.roleService.getUserPermissions(userId, organizationId);
 
-      res.status(200).json({
+      res.json({
+        success: true,
         message: 'Login successful',
-        data: authResponse
+        data: {
+          user: {
+            ...authResponse.user,
+            roles: userRoles,
+            permissions: userPermissions
+          },
+          tokens: {
+            accessToken: authResponse.access_token,
+            refreshToken: authResponse.refresh_token,
+            tokenType: authResponse.token_type,
+            expiresIn: authResponse.expires_in
+          }
+        }
       });
     } catch (error) {
       console.error('Login error:', error);
       res.status(401).json({
+        success: false,
         message: 'Login failed',
         error: error instanceof Error ? error.message : 'Invalid credentials'
-      });
-    }
-  };
-
-  /**
-   * Registro de usuario
-   */
-  public register = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { name, email, password, password_confirmation, firstName, lastName, phone } = req.body;
-
-      // Validaciones básicas
-      const errors: any = {};
-
-      if (!name) errors.name = ['Name is required'];
-      if (!email) errors.email = ['Email is required'];
-      if (!password) errors.password = ['Password is required'];
-      if (password && password.length < 6) {
-        errors.password = errors.password || [];
-        errors.password.push('Password must be at least 6 characters');
-      }
-      if (password !== password_confirmation) {
-        errors.password_confirmation = ['Password confirmation does not match'];
-      }
-
-      if (Object.keys(errors).length > 0) {
-        res.status(422).json({
-          message: 'Validation failed',
-          errors
-        });
-        return;
-      }
-
-      // Verificar si el email ya existe
-      const existingUser = await this.userService.findByEmail(email);
-      if (existingUser) {
-        res.status(422).json({
-          message: 'Validation failed',
-          errors: {
-            email: ['Email already registered']
-          }
-        });
-        return;
-      }
-
-      const userData: RegisterData = {
-        name,
-        email,
-        password,
-        firstName,
-        lastName,
-        phone
-      };
-
-      const authResponse = await this.authService.register(userData);
-
-      res.status(201).json({
-        message: 'Registration successful',
-        data: authResponse
-      });
-    } catch (error) {
-      console.error('Registration error:', error);
-      res.status(400).json({
-        message: 'Registration failed',
-        error: error instanceof Error ? error.message : 'Registration error'
       });
     }
   };
@@ -131,110 +153,107 @@ export class AuthController {
    */
   public logout = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      if (!req.token) {
-        res.status(401).json({
-          message: 'No token provided'
-        });
-        return;
+      // Tu AuthMiddleware ya maneja el token ID en el JWT payload
+      const token = req.token;
+      
+      if (token) {
+        // Extraer token ID del JWT para logout
+        const payload = require('../services/JWTService').JWTService.prototype.verifyToken(token);
+        await this.authService.logout(payload.jti);
       }
 
-      // Extraer token ID del JWT
-      const decoded = this.jwtService.decodeToken(req.token);
-      if (decoded && decoded.payload.jti) {
-        await this.authService.logout(decoded.payload.jti);
-      }
-
-      res.status(200).json({
+      res.json({
+        success: true,
         message: 'Logout successful'
       });
     } catch (error) {
       console.error('Logout error:', error);
       res.status(500).json({
+        success: false,
         message: 'Logout failed',
-        error: error instanceof Error ? error.message : 'Internal server error'
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   };
 
   /**
-   * Logout de todos los dispositivos
+   * Refrescar token
    */
-  public logoutAll = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  public refreshToken = async (req: Request, res: Response): Promise<void> => {
     try {
-      if (!req.user) {
-        res.status(401).json({
-          message: 'User not authenticated'
+      const { refreshToken } = req.body;
+
+      if (!refreshToken) {
+        res.status(400).json({
+          success: false,
+          message: 'Refresh token required'
         });
         return;
       }
 
-      await this.authService.logoutAll(req.user.id);
+      const authResponse = await this.authService.refreshToken(refreshToken);
 
-      res.status(200).json({
-        message: 'Logged out from all devices successfully'
+      res.json({
+        success: true,
+        message: 'Token refreshed successfully',
+        data: {
+          tokens: {
+            accessToken: authResponse.access_token,
+            refreshToken: authResponse.refresh_token,
+            tokenType: authResponse.token_type,
+            expiresIn: authResponse.expires_in
+          }
+        }
       });
     } catch (error) {
-      console.error('Logout all error:', error);
-      res.status(500).json({
-        message: 'Logout failed',
-        error: error instanceof Error ? error.message : 'Internal server error'
+      console.error('Token refresh error:', error);
+      res.status(401).json({
+        success: false,
+        message: 'Token refresh failed',
+        error: error instanceof Error ? error.message : 'Invalid refresh token'
       });
     }
   };
 
   /**
-   * Obtener información del usuario autenticado
+   * Obtener usuario actual (tu AuthMiddleware ya carga toda la info)
    */
   public me = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
       if (!req.user) {
-        res.status(401).json({
-          message: 'User not authenticated'
+        res.status(404).json({
+          success: false,
+          message: 'User not found'
         });
         return;
       }
 
-      const user = await this.authService.me(req.user.id);
+      // Tu AuthMiddleware ya crea el AuthenticatedUser completo
+      // Solo necesitamos obtener roles y permisos actualizados
+      const userRoles = await this.roleService.getUserRoles(req.user.id, req.user.organizationId);
+      const userPermissions = await this.roleService.getUserPermissions(req.user.id, req.user.organizationId);
 
-      res.status(200).json({
-        message: 'User information retrieved successfully',
-        data: user
+      res.json({
+        success: true,
+        data: {
+          ...req.user,
+          roles: userRoles,
+          permissions: userPermissions,
+          // Métodos helper para el frontend
+          hasRole: undefined, // No serializar funciones
+          hasPermission: undefined,
+          canAccessModule: undefined,
+          isSuperAdmin: undefined,
+          isAdmin: undefined
+        },
+        message: 'User profile retrieved successfully'
       });
     } catch (error) {
-      console.error('Me error:', error);
+      console.error('Get profile error:', error);
       res.status(500).json({
-        message: 'Failed to retrieve user information',
-        error: error instanceof Error ? error.message : 'Internal server error'
-      });
-    }
-  };
-
-  /**
-   * Actualizar perfil del usuario
-   */
-  public updateProfile = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-    try {
-      if (!req.user) {
-        res.status(401).json({
-          message: 'User not authenticated'
-        });
-        return;
-      }
-
-      const { name, firstName, lastName, phone, avatar } = req.body;
-      const updateData = { name, firstName, lastName, phone, avatar };
-
-      const updatedUser = await this.authService.updateProfile(req.user.id, updateData);
-
-      res.status(200).json({
-        message: 'Profile updated successfully',
-        data: updatedUser
-      });
-    } catch (error) {
-      console.error('Update profile error:', error);
-      res.status(500).json({
-        message: 'Failed to update profile',
-        error: error instanceof Error ? error.message : 'Internal server error'
+        success: false,
+        message: 'Failed to get user profile',
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   };
@@ -244,45 +263,30 @@ export class AuthController {
    */
   public changePassword = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
     try {
-      if (!req.user) {
-        res.status(401).json({
-          message: 'User not authenticated'
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({
+          success: false,
+          message: 'Validation errors',
+          errors: errors.array()
         });
         return;
       }
 
-      const { current_password, new_password, new_password_confirmation } = req.body;
+      const { currentPassword, newPassword } = req.body;
 
-      // Validaciones
-      const errors: any = {};
-      if (!current_password) errors.current_password = ['Current password is required'];
-      if (!new_password) errors.new_password = ['New password is required'];
-      if (new_password && new_password.length < 6) {
-        errors.new_password = errors.new_password || [];
-        errors.new_password.push('New password must be at least 6 characters');
-      }
-      if (new_password !== new_password_confirmation) {
-        errors.new_password_confirmation = ['Password confirmation does not match'];
-      }
+      await this.authService.changePassword(req.user!.id, currentPassword, newPassword);
 
-      if (Object.keys(errors).length > 0) {
-        res.status(422).json({
-          message: 'Validation failed',
-          errors
-        });
-        return;
-      }
-
-      await this.authService.changePassword(req.user.id, current_password, new_password);
-
-      res.status(200).json({
+      res.json({
+        success: true,
         message: 'Password changed successfully'
       });
     } catch (error) {
       console.error('Change password error:', error);
       res.status(400).json({
+        success: false,
         message: 'Failed to change password',
-        error: error instanceof Error ? error.message : 'Password change failed'
+        error: error instanceof Error ? error.message : 'Current password is incorrect'
       });
     }
   };
@@ -294,27 +298,18 @@ export class AuthController {
     try {
       const { email } = req.body;
 
-      if (!email) {
-        res.status(400).json({
-          message: 'Email is required',
-          errors: {
-            email: ['Email is required']
-          }
-        });
-        return;
-      }
-
       await this.authService.requestPasswordReset(email);
 
-      // Siempre devolver éxito por seguridad (no revelar si el email existe)
-      res.status(200).json({
-        message: 'If the email exists, a password reset link has been sent'
+      res.json({
+        success: true,
+        message: 'Password reset instructions sent to your email'
       });
     } catch (error) {
-      console.error('Request password reset error:', error);
+      console.error('Password reset request error:', error);
       res.status(500).json({
-        message: 'Failed to process password reset request',
-        error: error instanceof Error ? error.message : 'Internal server error'
+        success: false,
+        message: 'Failed to send password reset email',
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   };
@@ -324,70 +319,20 @@ export class AuthController {
    */
   public resetPassword = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { token, password, password_confirmation } = req.body;
-
-      // Validaciones
-      const errors: any = {};
-      if (!token) errors.token = ['Reset token is required'];
-      if (!password) errors.password = ['Password is required'];
-      if (password && password.length < 6) {
-        errors.password = errors.password || [];
-        errors.password.push('Password must be at least 6 characters');
-      }
-      if (password !== password_confirmation) {
-        errors.password_confirmation = ['Password confirmation does not match'];
-      }
-
-      if (Object.keys(errors).length > 0) {
-        res.status(422).json({
-          message: 'Validation failed',
-          errors
-        });
-        return;
-      }
+      const { token, password } = req.body;
 
       await this.authService.resetPassword(token, password);
 
-      res.status(200).json({
+      res.json({
+        success: true,
         message: 'Password reset successfully'
       });
     } catch (error) {
-      console.error('Reset password error:', error);
+      console.error('Password reset error:', error);
       res.status(400).json({
+        success: false,
         message: 'Failed to reset password',
         error: error instanceof Error ? error.message : 'Invalid or expired token'
-      });
-    }
-  };
-
-  /**
-   * Refrescar token de acceso
-   */
-  public refreshToken = async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { refresh_token } = req.body;
-
-      if (!refresh_token) {
-        res.status(400).json({
-          message: 'Refresh token is required',
-          errors: {
-            refresh_token: ['Refresh token is required']
-          }
-        });
-        return;
-      }
-
-      const authResponse = await this.authService.refreshToken(refresh_token);
-
-      res.status(200).json({
-        message: 'Token refreshed successfully',
-        data: authResponse
-      });
-    } catch (error) {
-      console.error('Refresh token error:', error);
-      res.status(401).json({
-        message: 'Failed to refresh token',
-        error: error instanceof Error ? error.message : 'Invalid refresh token'
       });
     }
   };
@@ -397,28 +342,73 @@ export class AuthController {
    */
   public verifyEmail = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { token } = req.body;
+      const { userId } = req.params;
 
-      if (!token) {
+      await this.authService.verifyEmail(parseInt(userId));
+
+      res.json({
+        success: true,
+        message: 'Email verified successfully'
+      });
+    } catch (error) {
+      console.error('Email verification error:', error);
+      res.status(400).json({
+        success: false,
+        message: 'Failed to verify email',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  };
+
+  /**
+   * Actualizar perfil
+   */
+  public updateProfile = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
         res.status(400).json({
-          message: 'Verification token is required'
+          success: false,
+          message: 'Validation errors',
+          errors: errors.array()
         });
         return;
       }
 
-      // Aquí implementarías la lógica de verificación
-      // Por simplicidad, asumimos que el token contiene el user ID
-      const payload = this.jwtService.verifyToken(token);
-      await this.authService.verifyEmail(parseInt(payload.sub));
+      const updatedUser = await this.authService.updateProfile(req.user!.id, req.body);
 
-      res.status(200).json({
-        message: 'Email verified successfully'
+      res.json({
+        success: true,
+        data: updatedUser,
+        message: 'Profile updated successfully'
       });
     } catch (error) {
-      console.error('Verify email error:', error);
-      res.status(400).json({
-        message: 'Email verification failed',
-        error: error instanceof Error ? error.message : 'Invalid verification token'
+      console.error('Update profile error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update profile',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  };
+
+  /**
+   * Cerrar sesión en todos los dispositivos
+   */
+  public logoutAll = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      await this.authService.logoutAll(req.user!.id);
+
+      res.json({
+        success: true,
+        message: 'Logged out from all devices successfully'
+      });
+    } catch (error) {
+      console.error('Logout all error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to logout from all devices',
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   };

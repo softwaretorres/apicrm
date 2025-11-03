@@ -1,9 +1,19 @@
 import { Router } from 'express';
 import { CatalogController } from '../controllers/CatalogController';
+import { AuthMiddleware } from '../middlewares/AuthMiddleware';
+import { apiRateLimit } from '../middlewares/RateLimitMiddleware';
 
 const router = Router();
 const catalogController = new CatalogController();
 
+
+const authMiddleware = new AuthMiddleware();
+
+// Aplicar autenticación a todas las rutas de usuarios
+router.use(authMiddleware.authenticate);
+
+// Aplicar rate limiting
+router.use(apiRateLimit);
 /**
  * @swagger
  * tags:
