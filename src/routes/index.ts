@@ -3,6 +3,7 @@ import authRoutes from './AuthRoutes';
 import userRoutes from './UserRoutes';
 import catalogRoutes from './CatalogRoutes';
 import propertyRoutes from './PropertyRoutes';
+import  GoogleDriveRoutes  from './GoogleDriveRoutes';
 
 
 
@@ -80,6 +81,7 @@ const router = Router();
 router.use('/auth', authRoutes);
 router.use('/catalogs', catalogRoutes);
 router.use('/properties', propertyRoutes);
+router.use('/ndrive', GoogleDriveRoutes);
 
 // Rutas de usuarios
 router.use('/users', userRoutes);

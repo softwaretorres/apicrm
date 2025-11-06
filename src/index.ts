@@ -45,7 +45,7 @@ app.use(helmet({
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: process.env.FRONTEND_URL,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -141,13 +141,13 @@ async function startServer(): Promise<void> {
     // Graceful shutdown
     const shutdown = (signal: string) => {
       logger.info(`${signal} received. Shutting down gracefully...`);
-      
+
       server.close((err) => {
         if (err) {
           logger.error('Error during server shutdown:', err);
           process.exit(1);
         }
-        
+
         logger.info('Server closed. Exiting process...');
         process.exit(0);
       });
@@ -171,9 +171,9 @@ async function startServer(): Promise<void> {
 
     // Handle unhandled promise rejections
     process.on('unhandledRejection', (reason, promise) => {
-      logger.error('Unhandled Rejection', { 
-        promise: promise.toString(), 
-        reason: reason 
+      logger.error('Unhandled Rejection', {
+        promise: promise.toString(),
+        reason: reason
       });
       process.exit(1);
     });

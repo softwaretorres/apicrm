@@ -5,6 +5,7 @@ import { OAuthAccessToken } from '../entities/OAuthAccessToken';
 import { OAuthClient } from '../entities/OAuthClient';
 import { PropertyType } from '../entities/PropertyType';
 import { PropertyStatus } from '../entities/PropertyStatus';
+import { GoogleDriveConnection } from '../entities/GoogleDriveConnection';
 import { TransactionType } from '../entities/TransactionType';
 import { PropertyCondition } from '../entities/PropertyCondition';
 import { PropertyFeature } from '../entities/PropertyFeature';
@@ -35,7 +36,7 @@ export const AppDataSource = new DataSource({
     RolePermission,
     Organization,
     PropertyType, PropertyStatus, TransactionType, PropertyCondition,
-    PropertyFeature, PropertyFeatureValue, PropertyImage, Property
+    PropertyFeature, PropertyFeatureValue, PropertyImage, Property, GoogleDriveConnection
 
   ],
   migrations: ['src/migrations/**/*.ts'],
