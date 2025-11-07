@@ -13,6 +13,7 @@ export interface UpdateRoleDTO {
   isActive?: boolean;
 }
 
+
 export interface AssignRoleDTO {
   userId: number;
   roleId: number;
@@ -20,6 +21,7 @@ export interface AssignRoleDTO {
   expiresAt?: Date;
   assignedBy?: number;
 }
+
 
 export interface CreatePermissionDTO {
   name: string;
