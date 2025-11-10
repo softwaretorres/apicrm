@@ -62,7 +62,7 @@ export class GoogleDriveService {
     this.oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET,
-      process.env.GOOGLE_REDIRECT_URI || 'http://localhost:3000/api/google-drive/connect'
+      process.env.GOOGLE_REDIRECT_URI
     );
   }
 
@@ -92,10 +92,12 @@ export class GoogleDriveService {
     let expiresAt: Date;
 
     if (request.code) {
+      console.log(request.code)
       // Intercambiar código de autorización por tokens
       const { tokens } = await this.oauth2Client.getToken(request.code);
 
       if (!tokens.access_token) {
+        
         throw new Error('No se recibió access token de Google');
       }
 
