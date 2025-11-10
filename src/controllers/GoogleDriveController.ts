@@ -157,7 +157,8 @@ export class GoogleDriveController {
         success: true,
         data: result
       });
-    } catch (error) {
+    } catch (error: any) {
+
       // Si el error es por token expirado, sugerir reconexión
       if (error instanceof Error && error.message.includes('Token expirado')) {
         return res.status(401).json({
@@ -169,6 +170,7 @@ export class GoogleDriveController {
 
       res.status(500).json({
         success: false,
+        needsConnection: error.status == 401 ? true : false,  // ← Flag especial
         message: 'Error al obtener archivos',
         error: error instanceof Error ? error.message : 'Error desconocido'
       });

@@ -11,7 +11,7 @@ import compression from 'compression';
 import morgan from 'morgan';
 import { initializeDatabase } from './config/database';
 import { Logger } from './utils/Logger';
-import { setupSwagger } from './config/swagger'; // ✅ AGREGAR ESTA LÍNEA
+import { setupSwagger } from './config/swagger';
 import { apiRateLimit } from './middlewares/RateLimitMiddleware';
 import routes from './routes';
 
@@ -24,6 +24,7 @@ const API_VERSION = process.env.API_VERSION || 'v1';
 
 setupSwagger(app);
 
+// app.js o server.js
 
 
 // Configurar middlewares de seguridad

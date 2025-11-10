@@ -3,6 +3,7 @@ import { google, drive_v3 } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 import { AppDataSource } from '../config/database';
 import { GoogleDriveConnection } from '../entities/GoogleDriveConnection';
+import { HttpError } from '../types';
 
 /**
  * Interfaces para los tipos de datos
@@ -18,8 +19,8 @@ export interface DriveFile {
   name: string;
   size: number;
   mimeType: string;
-  createdAt: Date;
-  modifiedAt: Date;
+  createdTime: Date;
+  modifiedTime: Date;
   webViewLink?: string;
   webContentLink?: string;
   thumbnailLink?: string;
@@ -91,13 +92,13 @@ export class GoogleDriveService {
     let refreshToken: string | undefined;
     let expiresAt: Date;
 
+
     if (request.code) {
-      console.log(request.code)
       // Intercambiar código de autorización por tokens
       const { tokens } = await this.oauth2Client.getToken(request.code);
 
       if (!tokens.access_token) {
-        
+
         throw new Error('No se recibió access token de Google');
       }
 
@@ -222,7 +223,7 @@ export class GoogleDriveService {
     });
 
     if (!connection) {
-      throw new Error('Usuario no conectado a Google Drive. Debe iniciar sesión primero.');
+      throw new HttpError(401, 'Usuario no conectado a Google Drive. Debe iniciar sesión primero.');
     }
 
     // Verificar si necesita refresh
@@ -295,8 +296,8 @@ export class GoogleDriveService {
       name: file.name!,
       size: parseInt(file.size || '0'),
       mimeType: file.mimeType!,
-      createdAt: new Date(file.createdTime!),
-      modifiedAt: new Date(file.modifiedTime!),
+      createdTime: new Date(file.createdTime!),
+      modifiedTime: new Date(file.modifiedTime!),
       webViewLink: file.webViewLink || undefined,
       webContentLink: file.webContentLink || undefined,
       thumbnailLink: file.thumbnailLink || undefined,
@@ -360,26 +361,23 @@ export class GoogleDriveService {
     const drive = await this.getDriveClient(userId);
 
     // Construir query para carpetas
-    let q = "mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+
+let q = "trashed = false";
 
     if (query.parentId) {
       q += ` and '${query.parentId}' in parents`;
     }
 
     const response = await drive.files.list({
-      q,
-      pageSize: query.pageSize || 50,
-      pageToken: query.pageToken,
-      orderBy: 'name',
-      fields: 'nextPageToken, files(id, name, createdTime, modifiedTime, parents, webViewLink)'
-    });
+    q,
+    pageSize: query.pageSize || 50,
+    pageToken: query.pageToken,
+    orderBy: 'folder,modifiedTime desc', // ✅ Carpetas primero
+    fields: 'nextPageToken, files(id, name, mimeType, size, createdTime, modifiedTime, webViewLink, webContentLink, thumbnailLink, parents, owners)'
+  });
+  const files = response.data.files?.map(file => this.mapDriveFile(file)) || [];
 
-    const folders = response.data.files?.map(folder => this.mapDriveFolder(folder)) || [];
-
-    return {
-      folders,
-      nextPageToken: response.data.nextPageToken || undefined
-    };
+  return { files, nextPageToken: response.data.nextPageToken };
   }
 
   /**
