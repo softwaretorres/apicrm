@@ -5,406 +5,604 @@ import { AppDataSource } from '../config/database';
 import { GoogleDriveConnection } from '../entities/GoogleDriveConnection';
 import { HttpError } from '../types';
 
-/**
- * Interfaces para los tipos de datos
- */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import { promisify } from 'util';
+
+
 export interface ConnectRequest {
-  code?: string;
-  accessToken?: string;
-  refreshToken?: string;
+    code?: string;
+    accessToken?: string;
+    refreshToken?: string;
 }
 
 export interface DriveFile {
-  id: string;
-  name: string;
-  size: number;
-  mimeType: string;
-  createdTime: Date;
-  modifiedTime: Date;
-  webViewLink?: string;
-  webContentLink?: string;
-  thumbnailLink?: string;
-  parentId?: string;
-  owners?: string[];
+    id: string;
+    name: string;
+    size: number;
+    mimeType: string;
+    createdTime: Date;
+    modifiedTime: Date;
+    webViewLink?: string;
+    webContentLink?: string;
+    thumbnailLink?: string;
+    parentId?: string;
+    owners?: string[];
 }
 
 export interface DriveFolder {
-  id: string;
-  name: string;
-  parentId?: string;
-  createdAt: Date;
-  modifiedAt: Date;
-  webViewLink?: string;
+    id: string;
+    name: string;
+    parentId?: string;
+    createdAt: Date;
+    modifiedAt: Date;
+    webViewLink?: string;
 }
 
 export interface ListFilesQuery {
-  folderId?: string;
-  pageSize?: number;
-  pageToken?: string;
-  query?: string;
-  orderBy?: string;
+    folderId?: string;
+    pageSize?: number;
+    pageToken?: string;
+    query?: string;
+    orderBy?: string;
 }
 
 export interface ListFoldersQuery {
-  parentId?: string;
-  pageSize?: number;
-  pageToken?: string;
+    parentId?: string;
+    pageSize?: number;
+    pageToken?: string;
 }
 
 /**
  * Servicio para manejar operaciones con Google Drive
  */
 export class GoogleDriveService {
-  private connectionRepo: Repository<GoogleDriveConnection>;
-  private oauth2Client: OAuth2Client;
+    private connectionRepo: Repository<GoogleDriveConnection>;
+    private oauth2Client: OAuth2Client;
 
-  constructor() {
-    this.connectionRepo = AppDataSource.getRepository(GoogleDriveConnection);
-    this.oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.GOOGLE_REDIRECT_URI
-    );
-  }
-
-  /**
-   * Genera la URL de autorización de Google OAuth
-   */
-  getAuthUrl(): string {
-    const scopes = [
-      'https://www.googleapis.com/auth/drive.readonly',
-      'https://www.googleapis.com/auth/drive.file',
-      'https://www.googleapis.com/auth/userinfo.email'
-    ];
-
-    return this.oauth2Client.generateAuthUrl({
-      access_type: 'offline',
-      scope: scopes,
-      prompt: 'consent'
-    });
-  }
-
-  /**
-   * Conecta un usuario a Google Drive
-   */
-  async connect(userId: number, request: ConnectRequest): Promise<GoogleDriveConnection> {
-    let accessToken: string;
-    let refreshToken: string | undefined;
-    let expiresAt: Date;
-
-
-    if (request.code) {
-      // Intercambiar código de autorización por tokens
-      const { tokens } = await this.oauth2Client.getToken(request.code);
-
-      if (!tokens.access_token) {
-
-        throw new Error('No se recibió access token de Google');
-      }
-
-      accessToken = tokens.access_token;
-      refreshToken = tokens.refresh_token || undefined;
-      expiresAt = tokens.expiry_date
-        ? new Date(tokens.expiry_date)
-        : new Date(Date.now() + 3600 * 1000);
-
-    } else if (request.accessToken) {
-      accessToken = request.accessToken;
-      refreshToken = request.refreshToken;
-      expiresAt = new Date(Date.now() + 3600 * 1000);
-    } else {
-      throw new Error('Se requiere code o accessToken');
+    constructor() {
+        this.connectionRepo = AppDataSource.getRepository(GoogleDriveConnection);
+        this.oauth2Client = new google.auth.OAuth2(
+            process.env.GOOGLE_CLIENT_ID,
+            process.env.GOOGLE_CLIENT_SECRET,
+            process.env.GOOGLE_REDIRECT_URI
+        );
     }
 
-    // Obtener información del usuario de Google
-    this.oauth2Client.setCredentials({
-      access_token: accessToken,
-      refresh_token: refreshToken
-    });
+    /**
+     * Genera la URL de autorización de Google OAuth
+     */
+    getAuthUrl(): string {
+        const scopes = [
+            'https://www.googleapis.com/auth/drive.readonly',
+            'https://www.googleapis.com/auth/drive.file',
+            'https://www.googleapis.com/auth/userinfo.email'
+        ];
 
-    const oauth2 = google.oauth2({ version: 'v2', auth: this.oauth2Client });
-    const userInfo = await oauth2.userinfo.get();
-
-    // Buscar conexión existente
-    let connection = await this.connectionRepo.findOne({
-      where: { userId, isActive: true }
-    });
-
-    if (connection) {
-      // Actualizar conexión existente
-      connection.accessToken = accessToken;
-      connection.refreshToken = refreshToken || connection.refreshToken;
-      connection.expiresAt = expiresAt;
-      connection.googleEmail = userInfo.data.email || connection.googleEmail;
-      connection.isActive = true;
-    } else {
-      // Crear nueva conexión
-      connection = this.connectionRepo.create({
-        userId,
-        accessToken,
-        refreshToken,
-        expiresAt,
-        googleEmail: userInfo.data.email || undefined,
-        isActive: true
-      });
+        return this.oauth2Client.generateAuthUrl({
+            access_type: 'offline',
+            scope: scopes,
+            prompt: 'consent'
+        });
     }
 
-    return await this.connectionRepo.save(connection);
-  }
+    /**
+     * Conecta un usuario a Google Drive
+     */
+    async connect(userId: number, request: ConnectRequest): Promise<GoogleDriveConnection> {
+        let accessToken: string;
+        let refreshToken: string | undefined;
+        let expiresAt: Date;
 
-  /**
-   * Desconecta un usuario de Google Drive
-   */
-  async disconnect(userId: number): Promise<boolean> {
-    const connection = await this.connectionRepo.findOne({
-      where: { userId, isActive: true }
-    });
 
-    if (!connection) {
-      throw new Error('No hay conexión activa con Google Drive');
-    }
+        if (request.code) {
+            // Intercambiar código de autorización por tokens
+            const { tokens } = await this.oauth2Client.getToken(request.code);
 
-    // Revocar el token de acceso en Google
-    if (connection.accessToken) {
-      try {
-        await this.oauth2Client.revokeToken(connection.accessToken);
-      } catch (error) {
-        console.error('Error al revocar token en Google:', error);
-      }
-    }
+            if (!tokens.access_token) {
 
-    // Eliminar de la base de datos
-    await this.connectionRepo.delete({ userId });
+                throw new Error('No se recibió access token de Google');
+            }
 
-    return true;
-  }
+            accessToken = tokens.access_token;
+            refreshToken = tokens.refresh_token || undefined;
+            expiresAt = tokens.expiry_date
+                ? new Date(tokens.expiry_date)
+                : new Date(Date.now() + 3600 * 1000);
 
-  /**
-   * Verifica si un usuario está conectado
-   */
-  async isConnected(userId: number): Promise<boolean> {
-    const count = await this.connectionRepo.count({
-      where: { userId, isActive: true }
-    });
-    return count > 0;
-  }
-
-  /**
-   * Obtiene el estado de la conexión de un usuario
-   */
-  async getConnectionStatus(userId: number): Promise<{
-    connected: boolean;
-    email?: string;
-    expiresAt?: Date;
-    needsRefresh?: boolean;
-  }> {
-    const connection = await this.connectionRepo.findOne({
-      where: { userId, isActive: true }
-    });
-
-    if (!connection) {
-      return { connected: false };
-    }
-
-    return {
-      connected: true,
-      email: connection.googleEmail,
-      expiresAt: connection.expiresAt,
-      needsRefresh: connection.needsRefresh()
-    };
-  }
-
-  /**
-   * Obtiene la conexión de un usuario y refresca el token si es necesario
-   */
-  private async getConnection(userId: number): Promise<{ accessToken: string; refreshToken?: string }> {
-    const connection = await this.connectionRepo.findOne({
-      where: { userId, isActive: true }
-    });
-
-    if (!connection) {
-      throw new HttpError(401, 'Usuario no conectado a Google Drive. Debe iniciar sesión primero.');
-    }
-
-    // Verificar si necesita refresh
-    if (connection.needsRefresh() && connection.refreshToken) {
-      this.oauth2Client.setCredentials({
-        refresh_token: connection.refreshToken
-      });
-
-      const { credentials } = await this.oauth2Client.refreshAccessToken();
-
-      const newAccessToken = credentials.access_token!;
-      const newExpiresAt = credentials.expiry_date
-        ? new Date(credentials.expiry_date)
-        : new Date(Date.now() + 3600 * 1000);
-
-      // Actualizar en base de datos
-      await this.connectionRepo.update(
-        { userId },
-        {
-          accessToken: newAccessToken,
-          expiresAt: newExpiresAt,
-          refreshToken: credentials.refresh_token || connection.refreshToken
+        } else if (request.accessToken) {
+            accessToken = request.accessToken;
+            refreshToken = request.refreshToken;
+            expiresAt = new Date(Date.now() + 3600 * 1000);
+        } else {
+            throw new Error('Se requiere code o accessToken');
         }
-      );
 
-      return {
-        accessToken: newAccessToken,
-        refreshToken: credentials.refresh_token || connection.refreshToken
-      };
+        // Obtener información del usuario de Google
+        this.oauth2Client.setCredentials({
+            access_token: accessToken,
+            refresh_token: refreshToken
+        });
+
+        const oauth2 = google.oauth2({ version: 'v2', auth: this.oauth2Client });
+        const userInfo = await oauth2.userinfo.get();
+
+        // Buscar conexión existente
+        let connection = await this.connectionRepo.findOne({
+            where: { userId, isActive: true }
+        });
+
+        if (connection) {
+            // Actualizar conexión existente
+            connection.accessToken = accessToken;
+            connection.refreshToken = refreshToken || connection.refreshToken;
+            connection.expiresAt = expiresAt;
+            connection.googleEmail = userInfo.data.email || connection.googleEmail;
+            connection.isActive = true;
+        } else {
+            // Crear nueva conexión
+            connection = this.connectionRepo.create({
+                userId,
+                accessToken,
+                refreshToken,
+                expiresAt,
+                googleEmail: userInfo.data.email || undefined,
+                isActive: true
+            });
+        }
+
+        return await this.connectionRepo.save(connection);
     }
 
-    // Si el token ya expiró y no se pudo refrescar
-    if (connection.isExpired()) {
-      await this.connectionRepo.update({ userId }, { isActive: false });
-      throw new Error('Token expirado. Por favor, vuelva a conectar su cuenta de Google Drive.');
+    /**
+     * Desconecta un usuario de Google Drive
+     */
+    async disconnect(userId: number): Promise<boolean> {
+        const connection = await this.connectionRepo.findOne({
+            where: { userId, isActive: true }
+        });
+
+        if (!connection) {
+            throw new Error('No hay conexión activa con Google Drive');
+        }
+
+        // Revocar el token de acceso en Google
+        if (connection.accessToken) {
+            try {
+                await this.oauth2Client.revokeToken(connection.accessToken);
+            } catch (error) {
+                console.error('Error al revocar token en Google:', error);
+            }
+        }
+
+        // Eliminar de la base de datos
+        await this.connectionRepo.delete({ userId });
+
+        return true;
     }
 
-    return {
-      accessToken: connection.accessToken,
-      refreshToken: connection.refreshToken
-    };
-  }
-
-  /**
-   * Obtiene el cliente de Drive autenticado
-   */
-  private async getDriveClient(userId: number): Promise<drive_v3.Drive> {
-    const connection = await this.getConnection(userId);
-
-    const auth = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.GOOGLE_REDIRECT_URI
-    );
-
-    auth.setCredentials({
-      access_token: connection.accessToken,
-      refresh_token: connection.refreshToken
-    });
-
-    return google.drive({ version: 'v3', auth });
-  }
-
-  /**
-   * Convierte un archivo de Google Drive al formato interno
-   */
-  private mapDriveFile(file: drive_v3.Schema$File): DriveFile {
-    return {
-      id: file.id!,
-      name: file.name!,
-      size: parseInt(file.size || '0'),
-      mimeType: file.mimeType!,
-      createdTime: new Date(file.createdTime!),
-      modifiedTime: new Date(file.modifiedTime!),
-      webViewLink: file.webViewLink || undefined,
-      webContentLink: file.webContentLink || undefined,
-      thumbnailLink: file.thumbnailLink || undefined,
-      parentId: file.parents?.[0],
-      owners: file.owners?.map(owner => owner.emailAddress || '')
-    };
-  }
-
-
-  /**
-   * Convierte una carpeta de Google Drive al formato interno
-   */
-  private mapDriveFolder(folder: drive_v3.Schema$File): DriveFolder {
-    return {
-      id: folder.id!,
-      name: folder.name!,
-      parentId: folder.parents?.[0],
-      createdAt: new Date(folder.createdTime!),
-      modifiedAt: new Date(folder.modifiedTime!),
-      webViewLink: folder.webViewLink || undefined
-    };
-  }
-
-  /**
-   * Lista archivos del usuario en Google Drive
-   */
-  async listFiles(userId: number, query: ListFilesQuery = {}) {
-    const drive = await this.getDriveClient(userId);
-
-    // Construir query de Google Drive
-    let q = "mimeType != 'application/vnd.google-apps.folder' and trashed = false";
-
-    if (query.folderId) {
-      q += ` and '${query.folderId}' in parents`;
+    /**
+     * Verifica si un usuario está conectado
+     */
+    async isConnected(userId: number): Promise<boolean> {
+        const count = await this.connectionRepo.count({
+            where: { userId, isActive: true }
+        });
+        return count > 0;
     }
 
-    if (query.query) {
-      q += ` and ${query.query}`;
+    /**
+     * Obtiene el estado de la conexión de un usuario
+     */
+    async getConnectionStatus(userId: number): Promise<{
+        connected: boolean;
+        email?: string;
+        expiresAt?: Date;
+        needsRefresh?: boolean;
+    }> {
+        const connection = await this.connectionRepo.findOne({
+            where: { userId, isActive: true }
+        });
+
+        if (!connection) {
+            return { connected: false };
+        }
+
+        return {
+            connected: true,
+            email: connection.googleEmail,
+            expiresAt: connection.expiresAt,
+            needsRefresh: connection.needsRefresh()
+        };
     }
 
-    const response = await drive.files.list({
-      q,
-      pageSize: query.pageSize || 50,
-      pageToken: query.pageToken,
-      orderBy: query.orderBy || 'modifiedTime desc',
-      fields: 'nextPageToken, files(id, name, mimeType, size, createdTime, modifiedTime, webViewLink, webContentLink, thumbnailLink, parents, owners)'
-    });
+    /**
+     * Obtiene la conexión de un usuario y refresca el token si es necesario
+     */
+    private async getConnection(userId: number): Promise<{ accessToken: string; refreshToken?: string }> {
+        const connection = await this.connectionRepo.findOne({
+            where: { userId, isActive: true }
+        });
 
-    const files = response.data.files?.map(file => this.mapDriveFile(file)) || [];
+        if (!connection) {
+            throw new HttpError(401, 'Usuario no conectado a Google Drive. Debe iniciar sesión primero.');
+        }
 
-    return {
-      files,
-      nextPageToken: response.data.nextPageToken || undefined
-    };
-  }
+        // Verificar si necesita refresh
+        if (connection.needsRefresh() && connection.refreshToken) {
+            this.oauth2Client.setCredentials({
+                refresh_token: connection.refreshToken
+            });
 
-  /**
-   * Lista carpetas del usuario en Google Drive
-   */
-  async listFolders(userId: number, query: ListFoldersQuery = {}) {
-    const drive = await this.getDriveClient(userId);
+            const { credentials } = await this.oauth2Client.refreshAccessToken();
 
-    // Construir query para carpetas
+            const newAccessToken = credentials.access_token!;
+            const newExpiresAt = credentials.expiry_date
+                ? new Date(credentials.expiry_date)
+                : new Date(Date.now() + 3600 * 1000);
 
-let q = "trashed = false";
+            // Actualizar en base de datos
+            await this.connectionRepo.update(
+                { userId },
+                {
+                    accessToken: newAccessToken,
+                    expiresAt: newExpiresAt,
+                    refreshToken: credentials.refresh_token || connection.refreshToken
+                }
+            );
 
-    if (query.parentId) {
-      q += ` and '${query.parentId}' in parents`;
+            return {
+                accessToken: newAccessToken,
+                refreshToken: credentials.refresh_token || connection.refreshToken
+            };
+        }
+
+        // Si el token ya expiró y no se pudo refrescar
+        if (connection.isExpired()) {
+            await this.connectionRepo.update({ userId }, { isActive: false });
+            throw new Error('Token expirado. Por favor, vuelva a conectar su cuenta de Google Drive.');
+        }
+
+        return {
+            accessToken: connection.accessToken,
+            refreshToken: connection.refreshToken
+        };
     }
 
-    const response = await drive.files.list({
-    q,
-    pageSize: query.pageSize || 50,
-    pageToken: query.pageToken,
-    orderBy: 'folder,modifiedTime desc', // ✅ Carpetas primero
-    fields: 'nextPageToken, files(id, name, mimeType, size, createdTime, modifiedTime, webViewLink, webContentLink, thumbnailLink, parents, owners)'
-  });
-  const files = response.data.files?.map(file => this.mapDriveFile(file)) || [];
+    /**
+     * Obtiene el cliente de Drive autenticado
+     */
+    private async getDriveClient(userId: number): Promise<drive_v3.Drive> {
+        const connection = await this.getConnection(userId);
 
-  return { files, nextPageToken: response.data.nextPageToken };
-  }
+        const auth = new google.auth.OAuth2(
+            process.env.GOOGLE_CLIENT_ID,
+            process.env.GOOGLE_CLIENT_SECRET,
+            process.env.GOOGLE_REDIRECT_URI
+        );
 
-  /**
-   * Obtiene información de un archivo específico
-   */
-  async getFileById(userId: number, fileId: string): Promise<DriveFile> {
-    const drive = await this.getDriveClient(userId);
+        auth.setCredentials({
+            access_token: connection.accessToken,
+            refresh_token: connection.refreshToken
+        });
 
-    const response = await drive.files.get({
-      fileId,
-      fields: 'id, name, mimeType, size, createdTime, modifiedTime, webViewLink, webContentLink, thumbnailLink, parents, owners'
-    });
+        return google.drive({ version: 'v3', auth });
+    }
 
-    return this.mapDriveFile(response.data);
-  }
+    /**
+     * Convierte un archivo de Google Drive al formato interno
+     */
+    private mapDriveFile(file: drive_v3.Schema$File): DriveFile {
+        return {
+            id: file.id!,
+            name: file.name!,
+            size: parseInt(file.size || '0'),
+            mimeType: file.mimeType!,
+            createdTime: new Date(file.createdTime!),
+            modifiedTime: new Date(file.modifiedTime!),
+            webViewLink: file.webViewLink || undefined,
+            webContentLink: file.webContentLink || undefined,
+            thumbnailLink: file.thumbnailLink || undefined,
+            parentId: file.parents?.[0],
+            owners: file.owners?.map(owner => owner.emailAddress || '')
+        };
+    }
 
-  /**
-   * Obtiene información de una carpeta específica
-   */
-  async getFolderById(userId: number, folderId: string): Promise<DriveFolder> {
-    const drive = await this.getDriveClient(userId);
 
-    const response = await drive.files.get({
-      fileId: folderId,
-      fields: 'id, name, createdTime, modifiedTime, parents, webViewLink'
-    });
+    /**
+     * Convierte una carpeta de Google Drive al formato interno
+     */
+    private mapDriveFolder(folder: drive_v3.Schema$File): DriveFolder {
+        return {
+            id: folder.id!,
+            name: folder.name!,
+            parentId: folder.parents?.[0],
+            createdAt: new Date(folder.createdTime!),
+            modifiedAt: new Date(folder.modifiedTime!),
+            webViewLink: folder.webViewLink || undefined
+        };
+    }
 
-    return this.mapDriveFolder(response.data);
-  }
+    /**
+     * Lista archivos del usuario en Google Drive
+     */
+    async listFiles(userId: number, query: ListFilesQuery = {}) {
+        const drive = await this.getDriveClient(userId);
+
+        // Construir query de Google Drive
+        let q = "mimeType != 'application/vnd.google-apps.folder' and trashed = false";
+
+        if (query.folderId) {
+            q += ` and '${query.folderId}' in parents`;
+        }
+
+        if (query.query) {
+            q += ` and ${query.query}`;
+        }
+
+        const response = await drive.files.list({
+            q,
+            pageSize: query.pageSize || 50,
+            pageToken: query.pageToken,
+            orderBy: query.orderBy || 'modifiedTime desc',
+            fields: 'nextPageToken, files(id, name, mimeType, size, createdTime, modifiedTime, webViewLink, webContentLink, thumbnailLink, parents, owners)'
+        });
+
+        const files = response.data.files?.map(file => this.mapDriveFile(file)) || [];
+
+        return {
+            files,
+            nextPageToken: response.data.nextPageToken || undefined
+        };
+    }
+
+    /**
+     * Lista carpetas del usuario en Google Drive
+     */
+    async listFolders(userId: number, query: ListFoldersQuery = {}) {
+        const drive = await this.getDriveClient(userId);
+
+        // Construir query para carpetas
+
+        let q = "trashed = false";
+
+        if (query.parentId) {
+            q += ` and '${query.parentId}' in parents`;
+        }
+
+        const response = await drive.files.list({
+            q,
+            pageSize: query.pageSize || 50,
+            pageToken: query.pageToken,
+            orderBy: 'folder,modifiedTime desc', // ✅ Carpetas primero
+            fields: 'nextPageToken, files(id, name, mimeType, size, createdTime, modifiedTime, webViewLink, webContentLink, thumbnailLink, parents, owners)'
+        });
+        const files = response.data.files?.map(file => this.mapDriveFile(file)) || [];
+
+        return { files, nextPageToken: response.data.nextPageToken };
+    }
+
+    /**
+     * Obtiene información de un archivo específico
+     */
+    async getFileById(userId: number, fileId: string): Promise<DriveFile> {
+        const drive = await this.getDriveClient(userId);
+
+        const response = await drive.files.get({
+            fileId,
+            fields: 'id, name, mimeType, size, createdTime, modifiedTime, webViewLink, webContentLink, thumbnailLink, parents, owners'
+        });
+
+        return this.mapDriveFile(response.data);
+    }
+
+    /**
+     * Obtiene información de una carpeta específica
+     */
+    async getFolderById(userId: number, folderId: string): Promise<DriveFolder> {
+        const drive = await this.getDriveClient(userId);
+
+        const response = await drive.files.get({
+            fileId: folderId,
+            fields: 'id, name, createdTime, modifiedTime, parents, webViewLink'
+        });
+
+        return this.mapDriveFolder(response.data);
+    }
+
+
+    async downloadFile(userId: number, fileId: string) {
+        const drive = await this.getDriveClient(userId);
+
+        const response = await drive.files.get(
+            { fileId, alt: 'media' },
+            { responseType: 'stream' }
+        );
+
+        return response.data;
+    }
+
+    async getFileMetadata(userId: number, fileId: string) {
+        const drive = await this.getDriveClient(userId);
+
+        const response = await drive.files.get({
+            fileId,
+            fields: 'id, name, mimeType, size'
+        });
+
+        return response.data;
+    }
+
+    async createShareLink(userId: number, fileId: string) {
+        const drive = await this.getDriveClient(userId);
+
+        // Hacer el archivo accesible por link
+        await drive.permissions.create({
+            fileId,
+            requestBody: {
+                role: 'reader',
+                type: 'anyone'
+            }
+        });
+
+        // Obtener el webViewLink o webContentLink
+        const file = await drive.files.get({
+            fileId,
+            fields: 'webViewLink, webContentLink'
+        });
+
+        return file.data.webViewLink || file.data.webContentLink;
+    }
+
+
+    // Agregar estos métodos a tu GoogleDriveService
+
+
+    // En tu googleDriveService
+
+    async createPublicLink(userId: number, fileId: string): Promise<string> {
+        const drive = await this.getDriveClient(userId);
+
+        // 1. Obtener metadata del archivo
+        const metadata = await drive.files.get({
+            fileId,
+            fields: 'id, name, mimeType, size'
+        });
+
+        // 2. Validar que existan los datos necesarios
+        if (!metadata.data.mimeType || !metadata.data.name) {
+            throw new Error('No se pudo obtener información del archivo');
+        }
+
+        // 3. Validar que sea PDF o Word
+        const allowedMimeTypes = [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ];
+
+        if (!allowedMimeTypes.includes(metadata.data.mimeType)) {
+            throw new Error('Solo se pueden compartir archivos PDF o Word');
+        }
+
+        // 4. Validar por extensión también
+        const fileName = metadata.data.name.toLowerCase();
+        const allowedExtensions = ['.pdf', '.doc', '.docx'];
+        const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+
+        if (!hasValidExtension) {
+            throw new Error('Solo se pueden compartir archivos PDF (.pdf) o Word (.doc, .docx)');
+        }
+
+        // 5. Descargar el archivo
+        const response = await drive.files.get(
+            { fileId, alt: 'media' },
+            { responseType: 'stream' }
+        );
+
+        // 6. Crear directorio si no existe
+        const uploadDir = path.join(__dirname, '../../uploads/shared');
+        await fs.promises.mkdir(uploadDir, { recursive: true });
+
+        // 7. Guardar archivo
+        const savedFileName = `${fileId}-${metadata.data.name}`;
+        const filePath = path.join(uploadDir, savedFileName);
+
+        const writer = fs.createWriteStream(filePath);
+        await new Promise<void>((resolve, reject) => {
+            response.data.pipe(writer);
+            writer.on('finish', () => resolve());
+            writer.on('error', (err) => reject(err));
+        });
+        // 8. Retornar URL pública
+        const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+        return `${baseUrl}/share/${fileId}`;
+    }
+    async getSharedFile(fileId: string): Promise<{ filePath: string; metadata: any }> {
+        const uploadDir = path.join(__dirname, '../../uploads/shared');
+
+        const files = fs.readdirSync(uploadDir);
+        const fileName = files.find(f => f.startsWith(fileId));
+
+        if (!fileName) {
+            throw new Error('Archivo no encontrado');
+        }
+
+        const filePath = path.join(uploadDir, fileName);
+        const originalName = fileName.replace(`${fileId}-`, '');
+
+        return {
+            filePath,
+            metadata: {
+                name: originalName,
+                mimeType: this.getMimeType(originalName)
+            }
+        };
+    }
+
+    private getMimeType(filename: string): string {
+        const ext = path.extname(filename).toLowerCase();
+        const mimeTypes: { [key: string]: string } = {
+            '.pdf': 'application/pdf',
+            '.doc': 'application/msword',
+            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        };
+        return mimeTypes[ext] || 'application/octet-stream';
+    }
+    async streamPublicFile(fileId: string) {
+        // Obtener el archivo sin autenticación de usuario específico
+        // Usar las credenciales de la app
+        const oauth2Client = new google.auth.OAuth2(
+            process.env.GOOGLE_CLIENT_ID,
+            process.env.GOOGLE_CLIENT_SECRET
+        );
+
+        const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+        const response = await drive.files.get(
+            { fileId, alt: 'media' },
+            { responseType: 'stream' }
+        );
+
+        return response.data;
+    }
+
+
+    async getFileForPublicAccess(fileId: string) {
+        // Este método NO requiere userId porque es público
+        const oauth2Client = new google.auth.OAuth2(
+            process.env.GOOGLE_CLIENT_ID,
+            process.env.GOOGLE_CLIENT_SECRET
+        );
+
+        const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+        const response = await drive.files.get(
+            { fileId, alt: 'media' },
+            { responseType: 'stream' }
+        );
+
+        return response.data;
+    }
+
+    async getPublicFileMetadata(fileId: string) {
+        const oauth2Client = new google.auth.OAuth2(
+            process.env.GOOGLE_CLIENT_ID,
+            process.env.GOOGLE_CLIENT_SECRET
+        );
+
+        const drive = google.drive({ version: 'v3', auth: oauth2Client });
+
+        const response = await drive.files.get({
+            fileId,
+            fields: 'id, name, mimeType, size, webViewLink'
+        });
+
+        return response.data;
+    }
 }
+function mkdir(uploadDir: any, arg1: { recursive: boolean; }) {
+    throw new Error('Function not implemented.');
+}
+
