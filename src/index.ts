@@ -14,6 +14,7 @@ import { Logger } from './utils/Logger';
 import { setupSwagger } from './config/swagger';
 import { apiRateLimit } from './middlewares/RateLimitMiddleware';
 import routes from './routes';
+import { GoogleDriveController } from './controllers/GoogleDriveController';
 
 // Cargar variables de entorno
 
@@ -89,6 +90,8 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use(`/api/${API_VERSION}`, routes);
+const googleDriveController = new GoogleDriveController();
+app.get('/share/:fileId', googleDriveController.servePublicFile); // SIN autenticación
 
 // Root endpoint
 app.get('/', (req, res) => {

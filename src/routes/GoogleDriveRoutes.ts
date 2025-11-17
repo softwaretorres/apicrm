@@ -52,7 +52,6 @@ router.use(apiRateLimit);
 router.get('/status', googleDriveController.getStatus);
 router.get('/files/:fileId/download',  googleDriveController.downloadFile);
 router.post('/files/:fileId/share',  googleDriveController.createPublicLink);
-router.get('/share/:fileId', googleDriveController.servePublicFile); // SIN autenticación
 /**
  * @swagger
  * /google-drive/connect:

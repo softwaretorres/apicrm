@@ -460,68 +460,50 @@ export class GoogleDriveService {
 
 
     // En tu googleDriveService
-
     async createPublicLink(userId: number, fileId: string): Promise<string> {
         const drive = await this.getDriveClient(userId);
-
+        const mkdir = promisify(fs.mkdir);
         // 1. Obtener metadata del archivo
         const metadata = await drive.files.get({
             fileId,
             fields: 'id, name, mimeType, size'
         });
 
-        // 2. Validar que existan los datos necesarios
-        if (!metadata.data.mimeType || !metadata.data.name) {
-            throw new Error('No se pudo obtener información del archivo');
-        }
-
-        // 3. Validar que sea PDF o Word
-        const allowedMimeTypes = [
-            'application/pdf',
-            'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        ];
-
-        if (!allowedMimeTypes.includes(metadata.data.mimeType)) {
-            throw new Error('Solo se pueden compartir archivos PDF o Word');
-        }
-
-        // 4. Validar por extensión también
-        const fileName = metadata.data.name.toLowerCase();
-        const allowedExtensions = ['.pdf', '.doc', '.docx'];
-        const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
-
-        if (!hasValidExtension) {
-            throw new Error('Solo se pueden compartir archivos PDF (.pdf) o Word (.doc, .docx)');
-        }
-
-        // 5. Descargar el archivo
+        // 2. Descargar el archivo
         const response = await drive.files.get(
             { fileId, alt: 'media' },
             { responseType: 'stream' }
         );
 
-        // 6. Crear directorio si no existe
+        // 3. Crear directorio si no existe
         const uploadDir = path.join(__dirname, '../../uploads/shared');
-        await fs.promises.mkdir(uploadDir, { recursive: true });
+        await mkdir(uploadDir, { recursive: true });
 
-        // 7. Guardar archivo
-        const savedFileName = `${fileId}-${metadata.data.name}`;
-        const filePath = path.join(uploadDir, savedFileName);
+        // 4. Guardar archivo con nombre único
+        const fileName = `${fileId}-${metadata.data.name}`;
+        const filePath = path.join(uploadDir, fileName);
 
+        // 5. Escribir el stream al archivo
         const writer = fs.createWriteStream(filePath);
+        response.data.pipe(writer);
+
+        // 6. Esperar a que termine de escribir
         await new Promise<void>((resolve, reject) => {
-            response.data.pipe(writer);
             writer.on('finish', () => resolve());
-            writer.on('error', (err) => reject(err));
+            writer.on('error', reject);
         });
-        // 8. Retornar URL pública
+        // 7. Retornar URL pública
         const baseUrl = process.env.APP_URL || 'http://localhost:3000';
         return `${baseUrl}/share/${fileId}`;
     }
+
     async getSharedFile(fileId: string): Promise<{ filePath: string; metadata: any }> {
         const uploadDir = path.join(__dirname, '../../uploads/shared');
 
+        console.log("Hola como estas", uploadDir)
+        //yes
+
+        // Buscar el archivo que comience con el fileId
         const files = fs.readdirSync(uploadDir);
         const fileName = files.find(f => f.startsWith(fileId));
 
@@ -530,6 +512,8 @@ export class GoogleDriveService {
         }
 
         const filePath = path.join(uploadDir, fileName);
+
+        // Extraer nombre original
         const originalName = fileName.replace(`${fileId}-`, '');
 
         return {
@@ -545,8 +529,14 @@ export class GoogleDriveService {
         const ext = path.extname(filename).toLowerCase();
         const mimeTypes: { [key: string]: string } = {
             '.pdf': 'application/pdf',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
             '.doc': 'application/msword',
             '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            '.xls': 'application/vnd.ms-excel',
+            '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         };
         return mimeTypes[ext] || 'application/octet-stream';
     }
@@ -601,8 +591,5 @@ export class GoogleDriveService {
 
         return response.data;
     }
-}
-function mkdir(uploadDir: any, arg1: { recursive: boolean; }) {
-    throw new Error('Function not implemented.');
 }
 

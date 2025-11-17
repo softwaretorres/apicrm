@@ -332,6 +332,8 @@ downloadFile = async (req: Request, res: Response) => {
   }
 };
 
+
+
 /**
  * Obtener link público/temporal para compartir
  */
@@ -373,37 +375,23 @@ getShareLink = async (req: Request, res: Response) => {
 // En tu controller
 
 // Endpoint SIN autenticación
+// Endpoint público SIN autenticación
 servePublicFile = async (req: Request, res: Response) => {
     try {
         const { fileId } = req.params;
 
-        // Obtener metadata
-        const metadata = await this.googleDriveService.getPublicFileMetadata(fileId);
+        const { filePath, metadata } = await this.googleDriveService.getSharedFile(fileId);
 
-        // Obtener stream del archivo
-        const fileStream = await this.googleDriveService.streamPublicFile(fileId);
-
-        // Configurar headers para mostrar el PDF en el navegador
-        res.setHeader('Content-Type', metadata.mimeType || 'application/pdf');
+        // Configurar headers
+        res.setHeader('Content-Type', metadata.mimeType);
         res.setHeader('Content-Disposition', `inline; filename="${metadata.name}"`);
 
-        if (metadata.size) {
-            res.setHeader('Content-Length', metadata.size);
-        }
-
-        // Hacer stream del archivo
-        fileStream.pipe(res);
-
-        fileStream.on('error', (error) => {
-            console.error('Error streaming file:', error);
-            if (!res.headersSent) {
-                res.status(500).json({ error: 'Error al transmitir el archivo' });
-            }
-        });
+        // Enviar el archivo
+        res.sendFile(filePath);
 
     } catch (error) {
         console.error('Error serving public file:', error);
-        res.status(404).send('Archivo no encontrado o no está compartido públicamente');
+        res.status(404).send('Archivo no encontrado');
     }
 };
 

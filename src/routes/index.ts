@@ -4,6 +4,7 @@ import userRoutes from './UserRoutes';
 import catalogRoutes from './CatalogRoutes';
 import propertyRoutes from './PropertyRoutes';
 import  GoogleDriveRoutes  from './GoogleDriveRoutes';
+import { GoogleDriveController } from '../controllers/GoogleDriveController';
 
 
 
@@ -87,9 +88,11 @@ router.use('/ndrive', GoogleDriveRoutes);
 router.use('/users', userRoutes);
 
 // Ruta de documentación/info de la API
+const googleDriveController = new GoogleDriveController();
+
 router.get('/', (req, res) => {
   res.json({
-    message: 'API REST - Node.js Microservice',
+    message: 'Ndrive',
     version: '1.0.0',
     endpoints: {
       auth: {
