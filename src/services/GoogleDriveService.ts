@@ -493,7 +493,7 @@ export class GoogleDriveService {
             writer.on('error', reject);
         });
         // 7. Retornar URL pública
-        const baseUrl = process.env.APP_URL || 'http://localhost:3000';
+        const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
         return `${baseUrl}/share/${fileId}`;
     }
 

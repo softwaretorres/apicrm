@@ -382,9 +382,10 @@ servePublicFile = async (req: Request, res: Response) => {
 
         const { filePath, metadata } = await this.googleDriveService.getSharedFile(fileId);
 
-        // Configurar headers
-        res.setHeader('Content-Type', metadata.mimeType);
+      res.setHeader('Content-Type', metadata.mimeType);
         res.setHeader('Content-Disposition', `inline; filename="${metadata.name}"`);
+        res.removeHeader('X-Frame-Options'); // Remover restricción
+        res.removeHeader('Content-Security-Policy'); // Remover CSPf
 
         // Enviar el archivo
         res.sendFile(filePath);
@@ -392,6 +393,24 @@ servePublicFile = async (req: Request, res: Response) => {
     } catch (error) {
         console.error('Error serving public file:', error);
         res.status(404).send('Archivo no encontrado');
+    }
+};
+
+getSharedFileMetadata = async (req: Request, res: Response) => {
+    try {
+        const { fileId } = req.params;
+
+        const { metadata } = await this.googleDriveService.getSharedFile(fileId);
+
+        res.json({
+            name: metadata.name,
+            size: metadata.size,
+            mimeType: metadata.mimeType
+        });
+
+    } catch (error) {
+        console.error('Error getting file metadata:', error);
+        res.status(404).json({ message: 'Archivo no encontrado' });
     }
 };
 
