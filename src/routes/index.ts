@@ -3,7 +3,7 @@ import authRoutes from './AuthRoutes';
 import userRoutes from './UserRoutes';
 import catalogRoutes from './CatalogRoutes';
 import propertyRoutes from './PropertyRoutes';
-import publicRoutes from "./publicRoutes";
+import publicRoutes from "./PublicRoutes";
 
 
 import  GoogleDriveRoutes  from './GoogleDriveRoutes';
