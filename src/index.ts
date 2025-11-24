@@ -90,9 +90,7 @@ app.get('/health', (req, res) => {
 
 // API routes
 app.use(`/api/${API_VERSION}`, routes);
-const googleDriveController = new GoogleDriveController();
-app.get('/share/:fileId', googleDriveController.servePublicFile); // SIN autenticación
-app.get('/share/:fileId/metadata', googleDriveController.getSharedFileMetadata);
+
 
 
 // Root endpoint

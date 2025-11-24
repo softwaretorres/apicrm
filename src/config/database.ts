@@ -18,6 +18,7 @@ import { Organization } from '../entities/Organization';
 import { Permission } from '../entities/Permission';
 import { RolePermission } from '../entities/RolePermission';
 import { UserRole } from '../entities/UserRole';
+import { ShareToken } from '../entities/ShareToken';
 dotenv.config();
 
 export const AppDataSource = new DataSource({
@@ -36,7 +37,7 @@ export const AppDataSource = new DataSource({
     RolePermission,
     Organization,
     PropertyType, PropertyStatus, TransactionType, PropertyCondition,
-    PropertyFeature, PropertyFeatureValue, PropertyImage, Property, GoogleDriveConnection
+    PropertyFeature, PropertyFeatureValue, PropertyImage, Property, GoogleDriveConnection, ShareToken
 
   ],
   migrations: ['src/migrations/**/*.ts'],

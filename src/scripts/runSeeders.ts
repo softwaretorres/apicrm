@@ -84,7 +84,7 @@ async function main() {
     if (!AppDataSource.isInitialized) {
       console.log('🔗 Connecting to database...');
       await AppDataSource.initialize();
-      console.log('✅ Database connected successfully!');
+      console.log(' Database connected successfully!');
     }
 
     console.log(`🌱 Running seeder command: ${command}\n`);

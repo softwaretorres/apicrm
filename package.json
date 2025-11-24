@@ -25,7 +25,9 @@
     "seed:help": "ts-node src/scripts/runSeeders.ts help",
     "schema:drop": "npm run typeorm -- schema:drop -d src/config/database.ts",
     "reset-db": "npm run schema:drop && npm run migration:run && npm run seed",
-    "fresh-start": "npm run reset-db && npm run dev"
+    "fresh-start": "npm run reset-db && npm run dev",
+    "identify:localfile": "ts-node src/scripts/identifyLocalFiles.ts"
+
   },
   "keywords": [
     "nodejs",

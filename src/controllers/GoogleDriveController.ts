@@ -370,12 +370,234 @@ getShareLink = async (req: Request, res: Response) => {
   }
 };
 
+  createShareToken = async (req: Request, res: Response) => {
+    try {
+      const userId = req.user?.id;
+      const { fileId } = req.params;
+      const { expirationDays } = req.body; // Opcional, por defecto 365
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Usuario no autenticado'
+        });
+      }
+
+      const shareLink = await this.googleDriveService.createShareLinkWithToken(
+        userId,
+        fileId,
+        { expirationDays }
+      );
+
+      res.json({
+        success: true,
+        data: shareLink,
+        message: 'Link de compartición creado exitosamente'
+      });
+
+    } catch (error) {
+      console.error('Error al crear token de compartición:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al generar link para compartir',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  };
+
+  /**
+   * GET /google-drive/share-tokens
+   * Lista todos los tokens de compartición del usuario
+   */
+  listShareTokens = async (req: Request, res: Response) => {
+    try {
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Usuario no autenticado'
+        });
+      }
+
+      const tokens = await this.googleDriveService.listShareTokens(userId);
+
+      res.json({
+        success: true,
+        data: tokens
+      });
+
+    } catch (error) {
+      console.error('Error al listar tokens:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener tokens de compartición',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  };
+
+  /**
+   * DELETE /google-drive/share-tokens/:token
+   * Revoca un token de compartición
+   */
+  revokeShareToken = async (req: Request, res: Response) => {
+    try {
+      const userId = req.user?.id;
+      const { token } = req.params;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Usuario no autenticado'
+        });
+      }
+
+      await this.googleDriveService.revokeShareToken(userId, token);
+
+      res.json({
+        success: true,
+        message: 'Token revocado exitosamente'
+      });
+
+    } catch (error) {
+      console.error('Error al revocar token:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al revocar token',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  };
+
+  /**
+   * GET /google-drive/share-tokens/:token/stats
+   * Obtiene estadísticas de un token
+   */
+  getShareTokenStats = async (req: Request, res: Response) => {
+    try {
+      const userId = req.user?.id;
+      const { token } = req.params;
+
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Usuario no autenticado'
+        });
+      }
+
+      const stats = await this.googleDriveService.getShareTokenStats(userId, token);
+
+      res.json({
+        success: true,
+        data: stats
+      });
+
+    } catch (error) {
+      console.error('Error al obtener estadísticas:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error al obtener estadísticas del token',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  };
+
+  /**
+   * GET /public/download/:token
+   * ENDPOINT PÚBLICO - Descarga archivo mediante token (SIN autenticación)
+   */
+  downloadFileByToken = async (req: Request, res: Response) => {
+    try {
+      const { token } = req.params;
+
+      const { stream, metadata } = await this.googleDriveService.getFileByShareToken(token);
+
+      // Configurar headers para descarga
+      res.setHeader('Content-Disposition', `attachment; filename="${metadata.name}"`);
+      res.setHeader('Content-Type', metadata.mimeType);
+      
+      if (metadata.size) {
+        res.setHeader('Content-Length', metadata.size);
+      }
+
+      // Stream el archivo al cliente
+      stream.pipe(res);
+
+    } catch (error: any) {
+      console.error('Error al descargar archivo por token:', error);
+      
+      // Manejar errores específicos
+      if (error.status === 404) {
+        return res.status(404).json({
+          success: false,
+          message: 'Link inválido o no encontrado'
+        });
+      }
+
+      if (error.status === 410) {
+        return res.status(410).json({
+          success: false,
+          message: 'El link ha expirado'
+        });
+      }
+
+      res.status(500).json({
+        success: false,
+        message: 'Error al descargar archivo',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  };
+
+  // OPCIONAL: Endpoint para visualizar archivo en el navegador (inline en vez de download)
+  /**
+   * GET /public/view/:token
+   * ENDPOINT PÚBLICO - Visualiza archivo en el navegador (SIN autenticación)
+   */
+  viewFileByToken = async (req: Request, res: Response) => {
+    try {
+      const { token } = req.params;
+
+      const { stream, metadata } = await this.googleDriveService.getFileByShareToken(token);
+
+      // Configurar headers para visualización inline
+      res.setHeader('Content-Disposition', `inline; filename="${metadata.name}"`);
+      res.setHeader('Content-Type', metadata.mimeType);
+      
+      if (metadata.size) {
+        res.setHeader('Content-Length', metadata.size);
+      }
+
+      // Remover restricciones para iframe (si quieres embeber)
+      res.removeHeader('X-Frame-Options');
+      res.removeHeader('Content-Security-Policy');
+
+      // Stream el archivo al cliente
+      stream.pipe(res);
+
+    } catch (error: any) {
+      console.error('Error al visualizar archivo por token:', error);
+      
+      if (error.status === 404) {
+        return res.status(404).send('Link inválido o no encontrado');
+      }
+
+      if (error.status === 410) {
+        return res.status(410).send('El link ha expirado');
+      }
+
+      res.status(500).send('Error al cargar archivo');
+    }
+  };
+
 // En tu controller
 
 // En tu controller
 
 // Endpoint SIN autenticación
 // Endpoint público SIN autenticación
+/*
 servePublicFile = async (req: Request, res: Response) => {
     try {
         const { fileId } = req.params;
@@ -458,5 +680,7 @@ createPublicLink = async (req: Request, res: Response) => {
 
 // Agregar a tus rutas:
 // router.post('/files/:fileId/share', authenticateToken, controller.createPublicLink);
-// router.get('/share/:fileId', controller.servePublicFile); // SIN autenticación
+// router.get('/share/:fileId', controller.servePublicFile); // SIN autenticación*/
+
+
 }

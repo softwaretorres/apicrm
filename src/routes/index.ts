@@ -3,6 +3,9 @@ import authRoutes from './AuthRoutes';
 import userRoutes from './UserRoutes';
 import catalogRoutes from './CatalogRoutes';
 import propertyRoutes from './PropertyRoutes';
+import publicRoutes from "./publicRoutes";
+
+
 import  GoogleDriveRoutes  from './GoogleDriveRoutes';
 import { GoogleDriveController } from '../controllers/GoogleDriveController';
 
@@ -88,7 +91,8 @@ router.use('/ndrive', GoogleDriveRoutes);
 router.use('/users', userRoutes);
 
 // Ruta de documentación/info de la API
-const googleDriveController = new GoogleDriveController();
+router.use('/public', publicRoutes); // Rutas públicas SIN autenticación
+
 
 router.get('/', (req, res) => {
   res.json({

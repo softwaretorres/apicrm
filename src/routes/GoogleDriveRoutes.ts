@@ -31,27 +31,9 @@ router.use(apiRateLimit);
  *     responses:
  *       200:
  *         description: Estado de conexión
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   type: object
- *                   properties:
- *                     connected:
- *                       type: boolean
- *                     email:
- *                       type: string
- *                     expiresAt:
- *                       type: string
- *                       format: date-time
  */
 router.get('/status', googleDriveController.getStatus);
-router.get('/files/:fileId/download',  googleDriveController.downloadFile);
-router.post('/files/:fileId/share',  googleDriveController.createPublicLink);
+
 /**
  * @swagger
  * /google-drive/connect:
@@ -60,15 +42,6 @@ router.post('/files/:fileId/share',  googleDriveController.createPublicLink);
  *     tags: [GoogleDrive]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: code
- *         schema:
- *           type: string
- *         description: Código de autorización de Google OAuth
- *     responses:
- *       200:
- *         description: URL de autorización o confirmación de conexión
  */
 router.get('/connect', googleDriveController.connect);
 
@@ -80,22 +53,6 @@ router.get('/connect', googleDriveController.connect);
  *     tags: [GoogleDrive]
  *     security:
  *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               code:
- *                 type: string
- *               accessToken:
- *                 type: string
- *               refreshToken:
- *                 type: string
- *     responses:
- *       200:
- *         description: Conexión exitosa
  */
 router.post('/connect', googleDriveController.connect);
 
@@ -107,9 +64,6 @@ router.post('/connect', googleDriveController.connect);
  *     tags: [GoogleDrive]
  *     security:
  *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Desconexión exitosa
  */
 router.post('/disconnect', googleDriveController.disconnect);
 
@@ -121,36 +75,6 @@ router.post('/disconnect', googleDriveController.disconnect);
  *     tags: [GoogleDrive]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: folderId
- *         schema:
- *           type: string
- *         description: ID de la carpeta
- *       - in: query
- *         name: pageSize
- *         schema:
- *           type: integer
- *           default: 50
- *         description: Número de resultados por página
- *       - in: query
- *         name: pageToken
- *         schema:
- *           type: string
- *         description: Token de paginación
- *       - in: query
- *         name: query
- *         schema:
- *           type: string
- *         description: Query de búsqueda de Google Drive
- *       - in: query
- *         name: orderBy
- *         schema:
- *           type: string
- *         description: Campo de ordenamiento
- *     responses:
- *       200:
- *         description: Lista de archivos
  */
 router.get('/files', googleDriveController.getFiles);
 
@@ -162,18 +86,76 @@ router.get('/files', googleDriveController.getFiles);
  *     tags: [GoogleDrive]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID del archivo
- *     responses:
- *       200:
- *         description: Información del archivo
  */
 router.get('/files/:id', googleDriveController.getFile);
+
+/**
+ * @swagger
+ * /google-drive/files/{fileId}/download:
+ *   get:
+ *     summary: Descargar archivo de Google Drive (autenticado)
+ *     tags: [GoogleDrive]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/files/:fileId/download', googleDriveController.downloadFile);
+
+/**
+ * @swagger
+ * /google-drive/files/{fileId}/share-token:
+ *   post:
+ *     summary: Crear token de compartición para un archivo
+ *     tags: [GoogleDrive]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               expirationDays:
+ *                 type: number
+ *                 description: Días hasta que expire el token (default 365)
+ *                 example: 365
+ *     responses:
+ *       200:
+ *         description: Token creado exitosamente
+ */
+router.post('/files/:fileId/share-token', googleDriveController.createShareToken);
+
+/**
+ * @swagger
+ * /google-drive/share-tokens:
+ *   get:
+ *     summary: Listar todos los tokens de compartición del usuario
+ *     tags: [GoogleDrive]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/share-tokens', googleDriveController.listShareTokens);
+
+/**
+ * @swagger
+ * /google-drive/share-tokens/{token}:
+ *   delete:
+ *     summary: Revocar un token de compartición
+ *     tags: [GoogleDrive]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.delete('/share-tokens/:token', googleDriveController.revokeShareToken);
+
+/**
+ * @swagger
+ * /google-drive/share-tokens/{token}/stats:
+ *   get:
+ *     summary: Obtener estadísticas de un token
+ *     tags: [GoogleDrive]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/share-tokens/:token/stats', googleDriveController.getShareTokenStats);
 
 /**
  * @swagger
@@ -183,26 +165,6 @@ router.get('/files/:id', googleDriveController.getFile);
  *     tags: [GoogleDrive]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: parentId
- *         schema:
- *           type: string
- *         description: ID de la carpeta padre
- *       - in: query
- *         name: pageSize
- *         schema:
- *           type: integer
- *           default: 50
- *         description: Número de resultados por página
- *       - in: query
- *         name: pageToken
- *         schema:
- *           type: string
- *         description: Token de paginación
- *     responses:
- *       200:
- *         description: Lista de carpetas
  */
 router.get('/folders', googleDriveController.getFolders);
 
@@ -214,16 +176,6 @@ router.get('/folders', googleDriveController.getFolders);
  *     tags: [GoogleDrive]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID de la carpeta
- *     responses:
- *       200:
- *         description: Información de la carpeta
  */
 router.get('/folders/:id', googleDriveController.getFolder);
 
